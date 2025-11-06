@@ -5,6 +5,7 @@ import Store from 'electron-store'
 import chokidar, { FSWatcher } from 'chokidar'
 import * as pty from 'node-pty'
 import { platform } from 'os'
+import { ClaudeIDEServer } from './claudeIDE'
 
 const store = new Store()
 
@@ -12,6 +13,7 @@ let mainWindow: BrowserWindow | null = null
 let fileWatcher: FSWatcher | null = null
 let debounceTimer: NodeJS.Timeout | null = null
 let ptyProcess: pty.IPty | null = null
+let claudeIDEServer: ClaudeIDEServer | null = null
 
 interface FileNode {
   name: string
@@ -146,6 +148,14 @@ ipcMain.handle('dialog:openFolder', async () => {
     const folderPath = result.filePaths[0]
     store.set('lastOpenedFolder', folderPath)
     startWatchingFolder(folderPath)
+
+    // Start Claude IDE server for this workspace
+    if (claudeIDEServer) {
+      await claudeIDEServer.stop()
+    }
+    claudeIDEServer = new ClaudeIDEServer()
+    await claudeIDEServer.start(folderPath)
+
     return folderPath
   }
 
@@ -164,6 +174,12 @@ ipcMain.handle('fs:readDirectory', async (_event, dirPath: string) => {
 ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
   try {
     const content = await readFile(filePath, 'utf-8')
+
+    // Notify Claude IDE server of the file change
+    if (claudeIDEServer) {
+      claudeIDEServer.updateCurrentFile(filePath, content)
+    }
+
     return content
   } catch (error) {
     console.error('Error reading file:', error)
@@ -177,6 +193,12 @@ ipcMain.handle('store:getLastFolder', async () => {
 
 ipcMain.handle('fs:startWatching', async (_event, folderPath: string) => {
   startWatchingFolder(folderPath)
+
+  // Start Claude IDE server for this workspace if not already started
+  if (!claudeIDEServer && folderPath) {
+    claudeIDEServer = new ClaudeIDEServer()
+    await claudeIDEServer.start(folderPath)
+  }
 })
 
 // Terminal IPC Handlers
@@ -223,11 +245,15 @@ ipcMain.handle('terminal:sendCommand', async (_event, command: string) => {
 // App lifecycle
 app.whenReady().then(createWindow)
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
   stopWatchingFolder()
   if (ptyProcess) {
     ptyProcess.kill()
     ptyProcess = null
+  }
+  if (claudeIDEServer) {
+    await claudeIDEServer.stop()
+    claudeIDEServer = null
   }
   if (process.platform !== 'darwin') {
     app.quit()

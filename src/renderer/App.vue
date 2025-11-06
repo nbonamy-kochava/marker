@@ -68,7 +68,7 @@ const {
 // Watch for file selection to inform Claude
 watch(selectedFile, (newFile) => {
   if (newFile && terminalRef.value) {
-    // Send full file path to terminal (Claude will see it if running)
+    // Send full file path to terminal (Claude will see it in prompt)
     terminalRef.value.sendCommand(`# Currently viewing: ${newFile}`)
   }
 })

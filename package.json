@@ -22,11 +22,14 @@
     "markdown-it-diagram": "^1.1.4",
     "markdown-it-mark": "^4.0.0",
     "node-pty": "^1.0.0",
-    "path-browserify": "^1.0.1"
+    "path-browserify": "^1.0.1",
+    "uuid": "^13.0.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
     "@types/markdown-it": "^14.1.2",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^5.1.4",
     "autoprefixer": "^10.4.20",
     "electron": "^32.2.0",
