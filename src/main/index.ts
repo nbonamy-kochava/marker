@@ -3,12 +3,15 @@ import { join } from 'path'
 import { readdir, readFile, stat } from 'fs/promises'
 import Store from 'electron-store'
 import chokidar, { FSWatcher } from 'chokidar'
+import * as pty from 'node-pty'
+import { platform } from 'os'
 
 const store = new Store()
 
 let mainWindow: BrowserWindow | null = null
 let fileWatcher: FSWatcher | null = null
 let debounceTimer: NodeJS.Timeout | null = null
+let ptyProcess: pty.IPty | null = null
 
 interface FileNode {
   name: string
@@ -176,11 +179,56 @@ ipcMain.handle('fs:startWatching', async (_event, folderPath: string) => {
   startWatchingFolder(folderPath)
 })
 
+// Terminal IPC Handlers
+ipcMain.handle('terminal:create', async () => {
+  if (ptyProcess) {
+    ptyProcess.kill()
+  }
+
+  const shell = platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/zsh'
+
+  ptyProcess = pty.spawn(shell, [], {
+    name: 'xterm-color',
+    cols: 80,
+    rows: 24,
+    cwd: process.env.HOME || process.cwd(),
+    env: process.env as Record<string, string>
+  })
+
+  ptyProcess.onData((data) => {
+    mainWindow?.webContents.send('terminal:data', data)
+  })
+
+  ptyProcess.onExit(() => {
+    mainWindow?.webContents.send('terminal:exit')
+  })
+
+  return ptyProcess.pid
+})
+
+ipcMain.handle('terminal:write', async (_event, data: string) => {
+  ptyProcess?.write(data)
+})
+
+ipcMain.handle('terminal:resize', async (_event, cols: number, rows: number) => {
+  ptyProcess?.resize(cols, rows)
+})
+
+ipcMain.handle('terminal:sendCommand', async (_event, command: string) => {
+  if (ptyProcess) {
+    ptyProcess.write(command + '\r')
+  }
+})
+
 // App lifecycle
 app.whenReady().then(createWindow)
 
 app.on('window-all-closed', () => {
   stopWatchingFolder()
+  if (ptyProcess) {
+    ptyProcess.kill()
+    ptyProcess = null
+  }
   if (process.platform !== 'darwin') {
     app.quit()
   }

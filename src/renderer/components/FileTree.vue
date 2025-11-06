@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-full bg-gray-50 border-r border-gray-200">
+  <div class="flex flex-col h-full bg-gray-50">
     <!-- Header -->
     <div class="p-4 border-b border-gray-200 bg-white">
       <button
