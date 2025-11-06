@@ -2,13 +2,15 @@
   "name": "marker",
   "version": "1.0.0",
   "description": "Markdown file browser built with Electron and Vue 3",
-  "main": "out/main/index.js",
-  "type": "module",
+  "main": ".vite/build/main.js",
+  "config": {
+    "forge": "./forge.config.ts"
+  },
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "typecheck": "vue-tsc --noEmit"
+    "dev": "electron-forge start",
+    "typecheck": "vue-tsc --noEmit",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.0",
@@ -21,7 +23,7 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "chokidar": "^4.0.3",
-    "electron-store": "^10.0.0",
+    "electron-store": "^8.2.0",
     "github-markdown-css": "^5.8.1",
     "highlight.js": "^11.10.0",
     "markdown-it": "^14.1.0",
@@ -33,11 +35,22 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7.10.2",
+    "@electron-forge/maker-deb": "^7.10.2",
+    "@electron-forge/maker-dmg": "^7.10.2",
+    "@electron-forge/maker-rpm": "^7.10.2",
+    "@electron-forge/maker-squirrel": "^7.10.2",
+    "@electron-forge/maker-zip": "^7.10.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.10.2",
+    "@electron-forge/plugin-fuses": "^7.10.2",
+    "@electron-forge/plugin-vite": "^7.10.2",
+    "@electron/fuses": "^1.8.0",
     "@electron/rebuild": "^4.0.1",
     "@types/markdown-it": "^14.1.2",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^5.1.4",
     "autoprefixer": "^10.4.20",
+    "dotenv": "^17.2.3",
     "electron": "^32.2.0",
     "electron-vite": "^2.3.0",
     "postcss": "^8.4.47",

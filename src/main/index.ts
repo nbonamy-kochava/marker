@@ -1,13 +1,13 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join } from 'path'
-import { readdir, readFile, stat } from 'fs/promises'
-import Store from 'electron-store'
-import chokidar, { FSWatcher } from 'chokidar'
-import * as pty from 'node-pty'
-import { platform } from 'os'
-import { ClaudeIDEServer } from './claudeIDE'
 import { exec } from 'child_process'
+import chokidar, { FSWatcher } from 'chokidar'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import Store from 'electron-store'
+import { readdir, readFile, writeFile } from 'fs/promises'
+import * as pty from 'node-pty'
+import { homedir, platform } from 'os'
+import { join } from 'path'
 import { promisify } from 'util'
+import { ClaudeIDEServer } from './claudeIDE'
 
 const execAsync = promisify(exec)
 
@@ -27,8 +27,8 @@ interface FileNode {
   children?: FileNode[]
 }
 
-// Electron-vite exposes preload scripts via VITE_DEV_SERVER_URL in dev mode
-const PRELOAD_PATH = join(__dirname, '../preload/index.mjs')
+// Preload path - VitePlugin outputs to .vite/build
+const PRELOAD_PATH = join(__dirname, 'preload.js')
 
 async function createWindow() {
   console.log('Preload path:', PRELOAD_PATH)
@@ -44,11 +44,13 @@ async function createWindow() {
     }
   })
 
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173')
+  // @ts-ignore - MAIN_WINDOW_VITE_DEV_SERVER_URL is provided by @electron-forge/plugin-vite
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    // @ts-ignore
+    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(join(__dirname, '../renderer/main_window/index.html'))
   }
 }
 
@@ -186,12 +188,12 @@ ipcMain.handle('dialog:openFolder', async () => {
     store.set('lastOpenedFolder', folderPath)
     startWatchingFolder(folderPath)
 
-    // Start Claude IDE server for this workspace
-    if (claudeIDEServer) {
-      await claudeIDEServer.stop()
-    }
-    claudeIDEServer = new ClaudeIDEServer()
-    await claudeIDEServer.start(folderPath)
+    // // Start Claude IDE server for this workspace
+    // if (claudeIDEServer) {
+    //   await claudeIDEServer.stop()
+    // }
+    // claudeIDEServer = new ClaudeIDEServer()
+    // await claudeIDEServer.start(folderPath)
 
     return folderPath
   }
@@ -248,38 +250,52 @@ ipcMain.handle('store:getLastFolder', async () => {
 ipcMain.handle('fs:startWatching', async (_event, folderPath: string) => {
   startWatchingFolder(folderPath)
 
-  // Start Claude IDE server for this workspace if not already started
-  if (!claudeIDEServer && folderPath) {
-    claudeIDEServer = new ClaudeIDEServer()
-    await claudeIDEServer.start(folderPath)
-  }
+  // // Start Claude IDE server for this workspace if not already started
+  // if (!claudeIDEServer && folderPath) {
+  //   claudeIDEServer = new ClaudeIDEServer()
+  //   await claudeIDEServer.start(folderPath)
+  // }
 })
 
 // Terminal IPC Handlers
 ipcMain.handle('terminal:create', async () => {
-  if (ptyProcess) {
-    ptyProcess.kill()
+  try {
+    if (ptyProcess) {
+      ptyProcess.kill()
+    }
+
+    // Use login shell to ensure proper environment in packaged app
+    const shell = platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/zsh'
+    const shellArgs = platform() === 'win32' ? [] : ['--login']
+    const cwd = homedir()
+
+    ptyProcess = pty.spawn(shell, shellArgs, {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 24,
+      cwd: cwd,
+      env: process.env as Record<string, string>
+    })
+
+    ptyProcess.onData((data) => {
+      mainWindow?.webContents.send('terminal:data', data)
+    })
+
+    ptyProcess.onExit(() => {
+      mainWindow?.webContents.send('terminal:exit')
+    })
+
+    return ptyProcess.pid
+  } catch (error: any) {
+    console.error('Terminal creation error:', {
+      message: error.message,
+      stack: error.stack,
+      errno: error.errno,
+      code: error.code,
+      syscall: error.syscall
+    })
+    throw error
   }
-
-  const shell = platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/zsh'
-
-  ptyProcess = pty.spawn(shell, [], {
-    name: 'xterm-color',
-    cols: 80,
-    rows: 24,
-    cwd: process.env.HOME || process.cwd(),
-    env: process.env as Record<string, string>
-  })
-
-  ptyProcess.onData((data) => {
-    mainWindow?.webContents.send('terminal:data', data)
-  })
-
-  ptyProcess.onExit(() => {
-    mainWindow?.webContents.send('terminal:exit')
-  })
-
-  return ptyProcess.pid
 })
 
 ipcMain.handle('terminal:write', async (_event, data: string) => {

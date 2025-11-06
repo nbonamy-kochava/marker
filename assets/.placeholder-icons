@@ -1,0 +1,9 @@
+# Icon Placeholders
+# Replace these placeholder icon files with proper Marker app icons:
+# - icon.icns: macOS icon (512x512 or higher)
+# - icon.ico: Windows icon (256x256 or higher)
+# - icon.png: Linux icon (512x512 PNG)
+
+You can use tools like:
+- macOS: iconutil or Image2Icon
+- Cross-platform: electron-icon-builder, png2icons

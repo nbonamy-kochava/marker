@@ -68,17 +68,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import FileTree from './components/FileTree.vue'
 import MarkdownViewer from './components/MarkdownViewer.vue'
 import Terminal from './components/Terminal.vue'
 import { useFileSystem } from './composables/useFileSystem'
 
 const terminalRef = ref<InstanceType<typeof Terminal> | null>(null)
-const fileTreeWidth = ref(320)
-const markdownWidth = ref(600)
+const fileTreeWidth = ref(250)
 const terminalCollapsed = ref(false)
-const terminalWidth = ref(600) // Store in pixels
+const terminalWidth = ref(400) // Store in pixels
 let activeHandle: 1 | 2 | null = null
 
 const {
@@ -166,16 +165,6 @@ function stopResize() {
 }
 
 onMounted(() => {
-  // Initialize widths
-  const container = document.querySelector('.flex.h-screen')
-  if (container) {
-    const containerRect = container.getBoundingClientRect()
-    const totalWidth = containerRect.width
-    fileTreeWidth.value = Math.floor(totalWidth * 0.2) // 20% for file tree
-    markdownWidth.value = Math.floor(totalWidth * 0.4) // 40% for markdown
-    // Remaining ~40% goes to terminal (flex-1)
-  }
-
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', stopResize)
 })
