@@ -6,6 +6,10 @@ import chokidar, { FSWatcher } from 'chokidar'
 import * as pty from 'node-pty'
 import { platform } from 'os'
 import { ClaudeIDEServer } from './claudeIDE'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
 
 const store = new Store()
 
@@ -19,6 +23,7 @@ interface FileNode {
   name: string
   path: string
   isDirectory: boolean
+  gitStatus?: 'modified' | 'added' | 'deleted' | 'untracked'
   children?: FileNode[]
 }
 
@@ -47,7 +52,37 @@ async function createWindow() {
   }
 }
 
-async function readDirectoryRecursive(dirPath: string): Promise<FileNode[]> {
+async function getGitStatus(repoPath: string): Promise<Map<string, string>> {
+  const statusMap = new Map<string, string>()
+
+  try {
+    const { stdout } = await execAsync('git status --porcelain', { cwd: repoPath })
+    const lines = stdout.split('\n').filter(line => line.trim())
+
+    for (const line of lines) {
+      const status = line.substring(0, 2)
+      const filePath = line.substring(3)
+      const fullPath = join(repoPath, filePath)
+
+      if (status === ' M' || status === 'M ' || status === 'MM') {
+        statusMap.set(fullPath, 'modified')
+      } else if (status === 'A ' || status === 'AM') {
+        statusMap.set(fullPath, 'added')
+      } else if (status === ' D' || status === 'D ') {
+        statusMap.set(fullPath, 'deleted')
+      } else if (status === '??') {
+        statusMap.set(fullPath, 'untracked')
+      }
+    }
+  } catch (error) {
+    // Not a git repo or git not available
+    console.log('Git status unavailable:', error)
+  }
+
+  return statusMap
+}
+
+async function readDirectoryRecursive(dirPath: string, gitStatusMap?: Map<string, string>): Promise<FileNode[]> {
   const entries = await readdir(dirPath, { withFileTypes: true })
   const nodes: FileNode[] = []
 
@@ -60,7 +95,7 @@ async function readDirectoryRecursive(dirPath: string): Promise<FileNode[]> {
     }
 
     if (entry.isDirectory()) {
-      const children = await readDirectoryRecursive(fullPath)
+      const children = await readDirectoryRecursive(fullPath, gitStatusMap)
       nodes.push({
         name: entry.name,
         path: fullPath,
@@ -68,10 +103,12 @@ async function readDirectoryRecursive(dirPath: string): Promise<FileNode[]> {
         children
       })
     } else if (entry.name.endsWith('.md') || entry.name.endsWith('.markdown')) {
+      const gitStatus = gitStatusMap?.get(fullPath) as any
       nodes.push({
         name: entry.name,
         path: fullPath,
-        isDirectory: false
+        isDirectory: false,
+        gitStatus
       })
     }
   }
@@ -164,7 +201,8 @@ ipcMain.handle('dialog:openFolder', async () => {
 
 ipcMain.handle('fs:readDirectory', async (_event, dirPath: string) => {
   try {
-    return await readDirectoryRecursive(dirPath)
+    const gitStatusMap = await getGitStatus(dirPath)
+    return await readDirectoryRecursive(dirPath, gitStatusMap)
   } catch (error) {
     console.error('Error reading directory:', error)
     throw error
@@ -184,6 +222,22 @@ ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
   } catch (error) {
     console.error('Error reading file:', error)
     throw error
+  }
+})
+
+ipcMain.handle('fs:writeFile', async (_event, filePath: string, content: string) => {
+  try {
+    await writeFile(filePath, content, 'utf-8')
+
+    // Notify Claude IDE server of the file change
+    if (claudeIDEServer) {
+      claudeIDEServer.updateCurrentFile(filePath, content)
+    }
+
+    return { success: true }
+  } catch (error: any) {
+    console.error('Error writing file:', error)
+    return { success: false, error: error.message }
   }
 })
 
@@ -239,6 +293,54 @@ ipcMain.handle('terminal:resize', async (_event, cols: number, rows: number) => 
 ipcMain.handle('terminal:sendCommand', async (_event, command: string) => {
   if (ptyProcess) {
     ptyProcess.write(command + '\r')
+  }
+})
+
+// Git IPC Handlers
+ipcMain.handle('git:getStatus', async (_event, repoPath: string) => {
+  try {
+    const { stdout } = await execAsync('git status --porcelain', { cwd: repoPath })
+    const files: Array<{ path: string; status: string }> = []
+
+    const lines = stdout.split('\n').filter(line => line.trim())
+    for (const line of lines) {
+      const status = line.substring(0, 2).trim()
+      const filePath = line.substring(3)
+
+      files.push({
+        path: filePath,
+        status: status === 'M' || status === 'MM' ? 'modified' :
+                status === 'A' || status === 'AM' ? 'added' :
+                status === 'D' ? 'deleted' :
+                status === '??' ? 'untracked' : 'unknown'
+      })
+    }
+
+    return files
+  } catch (error) {
+    console.error('Error getting git status:', error)
+    return []
+  }
+})
+
+ipcMain.handle('git:commit', async (_event, repoPath: string, message: string) => {
+  try {
+    await execAsync('git add .', { cwd: repoPath })
+    await execAsync(`git commit -m "${message.replace(/"/g, '\\"')}"`, { cwd: repoPath })
+    return { success: true }
+  } catch (error: any) {
+    console.error('Error committing:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('git:push', async (_event, repoPath: string) => {
+  try {
+    await execAsync('git push', { cwd: repoPath })
+    return { success: true }
+  } catch (error: any) {
+    console.error('Error pushing:', error)
+    return { success: false, error: error.message }
   }
 })
 

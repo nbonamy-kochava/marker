@@ -16,7 +16,7 @@
     </div>
 
     <!-- File Tree -->
-    <div class="flex-1 overflow-auto p-2">
+    <div class="flex-1 overflow-auto p-2 min-h-0">
       <TreeNode
         v-for="node in fileTree"
         :key="node.path"
@@ -25,11 +25,17 @@
         @select="$emit('selectFile', $event)"
       />
     </div>
+
+    <!-- Git Status Section -->
+    <div class="h-64 flex-shrink-0">
+      <GitStatus :current-folder="currentFolder" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import TreeNode from './TreeNode.vue'
+import GitStatus from './GitStatus.vue'
 import type { FileNode } from '../../preload/index'
 
 defineProps<{

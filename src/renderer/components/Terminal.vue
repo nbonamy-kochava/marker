@@ -86,7 +86,6 @@ onUnmounted(() => {
 .terminal-container {
   width: 100%;
   height: 100%;
-  padding: 8px;
   background-color: #1e1e1e;
 }
 </style>

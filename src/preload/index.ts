@@ -4,6 +4,7 @@ export interface FileNode {
   name: string
   path: string
   isDirectory: boolean
+  gitStatus?: 'modified' | 'added' | 'deleted' | 'untracked'
   children?: FileNode[]
 }
 
@@ -16,6 +17,9 @@ const api = {
 
   readFile: (path: string): Promise<string> =>
     ipcRenderer.invoke('fs:readFile', path),
+
+  writeFile: (path: string, content: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('fs:writeFile', path, content),
 
   getLastFolder: (): Promise<string | undefined> =>
     ipcRenderer.invoke('store:getLastFolder'),
@@ -54,6 +58,18 @@ const api = {
       ipcRenderer.on('terminal:exit', listener)
       return () => ipcRenderer.removeListener('terminal:exit', listener)
     }
+  },
+
+  // Git API
+  git: {
+    getStatus: (repoPath: string): Promise<Array<{ path: string; status: string }>> =>
+      ipcRenderer.invoke('git:getStatus', repoPath),
+
+    commit: (repoPath: string, message: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('git:commit', repoPath, message),
+
+    push: (repoPath: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('git:push', repoPath)
   }
 }
 
