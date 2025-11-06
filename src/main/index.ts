@@ -2,10 +2,13 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { readdir, readFile, stat } from 'fs/promises'
 import Store from 'electron-store'
+import chokidar, { FSWatcher } from 'chokidar'
 
 const store = new Store()
 
 let mainWindow: BrowserWindow | null = null
+let fileWatcher: FSWatcher | null = null
+let debounceTimer: NodeJS.Timeout | null = null
 
 interface FileNode {
   name: string
@@ -76,6 +79,60 @@ async function readDirectoryRecursive(dirPath: string): Promise<FileNode[]> {
   })
 }
 
+function notifyFolderChanged(folderPath: string) {
+  // Clear existing timer
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+  }
+
+  // Set new timer
+  debounceTimer = setTimeout(() => {
+    console.log('Notifying renderer of folder changes')
+    mainWindow?.webContents.send('fs:folder-changed', folderPath)
+    debounceTimer = null
+  }, 300)
+}
+
+function startWatchingFolder(folderPath: string) {
+  // Stop existing watcher if any
+  stopWatchingFolder()
+
+  console.log('Starting filesystem watcher for:', folderPath)
+
+  fileWatcher = chokidar.watch(folderPath, {
+    ignored: /(^|[/\\])\.|node_modules/, // ignore dotfiles and node_modules
+    persistent: true,
+    ignoreInitial: true, // don't fire events for initial scan
+    awaitWriteFinish: {
+      stabilityThreshold: 100,
+      pollInterval: 100
+    }
+  })
+
+  // Any change triggers a full refresh
+  fileWatcher
+    .on('add', () => notifyFolderChanged(folderPath))
+    .on('change', () => notifyFolderChanged(folderPath))
+    .on('unlink', () => notifyFolderChanged(folderPath))
+    .on('addDir', () => notifyFolderChanged(folderPath))
+    .on('unlinkDir', () => notifyFolderChanged(folderPath))
+    .on('error', (error) => console.error('Watcher error:', error))
+}
+
+function stopWatchingFolder() {
+  if (fileWatcher) {
+    console.log('Stopping filesystem watcher')
+    fileWatcher.close()
+    fileWatcher = null
+  }
+
+  // Clear pending timer
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+}
+
 // IPC Handlers
 ipcMain.handle('dialog:openFolder', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
@@ -85,6 +142,7 @@ ipcMain.handle('dialog:openFolder', async () => {
   if (!result.canceled && result.filePaths.length > 0) {
     const folderPath = result.filePaths[0]
     store.set('lastOpenedFolder', folderPath)
+    startWatchingFolder(folderPath)
     return folderPath
   }
 
@@ -114,10 +172,15 @@ ipcMain.handle('store:getLastFolder', async () => {
   return store.get('lastOpenedFolder') as string | undefined
 })
 
+ipcMain.handle('fs:startWatching', async (_event, folderPath: string) => {
+  startWatchingFolder(folderPath)
+})
+
 // App lifecycle
 app.whenReady().then(createWindow)
 
 app.on('window-all-closed', () => {
+  stopWatchingFolder()
   if (process.platform !== 'darwin') {
     app.quit()
   }

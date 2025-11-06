@@ -1,4 +1,4 @@
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import type { FileNode } from '../../preload/index'
 
 export function useFileSystem() {
@@ -9,6 +9,8 @@ export function useFileSystem() {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
+  let unsubscribeWatcher: (() => void) | null = null
+
   async function openFolder() {
     try {
       isLoading.value = true
@@ -18,6 +20,7 @@ export function useFileSystem() {
       if (folderPath) {
         currentFolder.value = folderPath
         await loadFileTree(folderPath)
+        setupWatcher()
       }
     } catch (err) {
       error.value = `Failed to open folder: ${err}`
@@ -27,16 +30,20 @@ export function useFileSystem() {
     }
   }
 
-  async function loadFileTree(path: string) {
+  async function loadFileTree(path: string, showLoading = true) {
     try {
-      isLoading.value = true
+      if (showLoading) {
+        isLoading.value = true
+      }
       error.value = null
       fileTree.value = await window.electronAPI.readDirectory(path)
     } catch (err) {
       error.value = `Failed to load file tree: ${err}`
       console.error(err)
     } finally {
-      isLoading.value = false
+      if (showLoading) {
+        isLoading.value = false
+      }
     }
   }
 
@@ -60,14 +67,51 @@ export function useFileSystem() {
       if (lastFolder) {
         currentFolder.value = lastFolder
         await loadFileTree(lastFolder)
+        await window.electronAPI.startWatching(lastFolder)
+        setupWatcher()
       }
     } catch (err) {
       console.error('Failed to load last folder:', err)
     }
   }
 
+  async function refreshAll() {
+    console.log('Refreshing folder contents...')
+    if (currentFolder.value) {
+      await loadFileTree(currentFolder.value, false) // Silent refresh, no loading indicator
+    }
+    if (selectedFile.value) {
+      try {
+        fileContent.value = await window.electronAPI.readFile(selectedFile.value)
+      } catch (err) {
+        console.error('Failed to refresh file:', err)
+        // File might have been deleted
+        selectedFile.value = null
+        fileContent.value = ''
+      }
+    }
+  }
+
+  function setupWatcher() {
+    // Clean up existing watcher if any
+    if (unsubscribeWatcher) {
+      unsubscribeWatcher()
+    }
+
+    // Setup new watcher
+    unsubscribeWatcher = window.electronAPI.onFolderChanged(() => {
+      refreshAll()
+    })
+  }
+
   onMounted(() => {
     loadLastFolder()
+  })
+
+  onUnmounted(() => {
+    if (unsubscribeWatcher) {
+      unsubscribeWatcher()
+    }
   })
 
   return {

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@iktakahiro/markdown-it-katex": "^4.0.1",
+    "chokidar": "^4.0.3",
     "electron-store": "^10.0.0",
     "github-markdown-css": "^5.8.1",
     "highlight.js": "^11.10.0",

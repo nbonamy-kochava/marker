@@ -18,7 +18,16 @@ const api = {
     ipcRenderer.invoke('fs:readFile', path),
 
   getLastFolder: (): Promise<string | undefined> =>
-    ipcRenderer.invoke('store:getLastFolder')
+    ipcRenderer.invoke('store:getLastFolder'),
+
+  startWatching: (path: string): Promise<void> =>
+    ipcRenderer.invoke('fs:startWatching', path),
+
+  onFolderChanged: (callback: (folderPath: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, folderPath: string) => callback(folderPath)
+    ipcRenderer.on('fs:folder-changed', listener)
+    return () => ipcRenderer.removeListener('fs:folder-changed', listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)
